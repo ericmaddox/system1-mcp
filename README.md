@@ -295,7 +295,7 @@ uvx system1-mcp doctor
 
 Sample output:
 ```
->> System 1 MCP Diagnostics (v0.1.0)
+>> System 1 MCP Diagnostics (v0.1.1)
 
 Environment:
   Python:        3.11.15
