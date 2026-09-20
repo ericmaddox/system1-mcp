@@ -124,10 +124,16 @@ def judge_impl(
     for k, v in options.items():
         if not isinstance(k, str) or not k.strip():
             return error_response("validation_error", "All option keys must be non-empty strings.")
+        normalized_key = k.strip()
+        if normalized_key in sanitized_options:
+            return error_response(
+                "validation_error",
+                "Option keys must be unique after trimming whitespace.",
+            )
         v_str = str(v).strip() if v is not None else None
         if v_str is not None and len(v_str) > MAX_INPUT_LENGTH:
             return error_response("validation_error", f"Option description exceeds maximum allowed length ({MAX_INPUT_LENGTH} chars).")
-        sanitized_options[k.strip()] = v_str
+        sanitized_options[normalized_key] = v_str
 
     if not _is_valid_probability(confidence_floor):
         return error_response("validation_error", "confidence_floor must be a valid float between 0.0 and 1.0.")
