@@ -19,6 +19,8 @@ Modern AI agents (Claude Desktop, Cursor, Antigravity, OpenHands, Hermes) curren
 
 **System 1 MCP gives agents their missing reflex layer.** Powered by [TypeSafe](https://typesafe.ai)'s Jev model, System 1 MCP equips agents with 4 high-speed reflex tools (`fast_guard`, `fast_judge`, `fast_verify`, `fast_score`) that return typed probabilities and discrete verdicts in ~50–150 ms without chain-of-thought token generation.
 
+> **Executive Summary**: TypeSafe provides the foundational model; System 1 MCP provides the **agent runtime integration layer**. It bridges raw classification heads into live agent workflows by packaging pre-calibrated safety batteries, enforcing fail-safe escalation, and automating single-command deployment across Claude Desktop, Cursor, Antigravity, and Windsurf.
+
 ---
 
 ## What Changes When You Install System 1 MCP?
