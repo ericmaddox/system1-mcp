@@ -1,0 +1,70 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "system1-mcp"
+version = "0.1.0"
+description = "Jev-powered System 1 reflex engine for AI agents via Model Context Protocol (MCP)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [
+    { name = "System 1 Contributors" }
+]
+keywords = [
+    "mcp",
+    "ai-agents",
+    "typesafe",
+    "jev",
+    "system-1",
+    "system1",
+    "guardrails",
+    "routing",
+    "reflex",
+    "claude",
+    "cursor",
+    "antigravity",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "mcp>=1.0.0",
+    "typesafe-sdk>=0.5.7",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+]
+
+[project.scripts]
+system1-mcp = "system1_mcp.cli:main"
+
+[project.urls]
+Homepage = "https://typesafe.ai"
+Documentation = "https://github.com/ericmaddox/system1-mcp#readme"
+Repository = "https://github.com/ericmaddox/system1-mcp"
+Issues = "https://github.com/ericmaddox/system1-mcp/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["system1_mcp*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: marks tests as live integration tests requiring TYPESAFE_API_KEY (deselect with '-m \"not integration\"')",
+]
