@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/banner.jpg" alt="System 1 MCP - Reflex Engine for AI Agents" width="800">
+</p>
+
 # System 1 MCP Server
 
 [![CI](https://github.com/ericmaddox/system1-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/ericmaddox/system1-mcp/actions/workflows/ci.yml)
