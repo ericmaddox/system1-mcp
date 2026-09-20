@@ -363,6 +363,24 @@ uvx system1-mcp config show
 
 ---
 
+## Agent Instructions (`AGENTS.md` / `.cursorrules` / `CLAUDE.md`)
+
+MCP registers the reflex tools in your IDE, but adding an explicit instruction to your project ensures your agent invokes them automatically rather than relying on slow text deliberation.
+
+Copy and paste the following snippet into your repository's `AGENTS.md`, `CLAUDE.md`, or `.cursorrules`:
+
+```markdown
+# System 1 Reflex Rules
+You have access to System 1 MCP tools (`fast_guard`, `fast_judge`, `fast_verify`, `fast_score`).
+1. Pre-Execution Safety: Call `fast_guard(command, goal)` before running shell commands or modifying databases. If action == "block", halt immediately and alert the user.
+2. Option Arbitration: Call `fast_judge(question, options)` when choosing among candidate files or configurations instead of reading entire files into context.
+3. Verification: Call `fast_verify(statement, evidence)` with terminal output to confirm test passes or deployment health.
+```
+
+See [AGENTS.md](AGENTS.md) in this repository for the full reference implementation.
+
+---
+
 ## Development and Testing
 
 ```bash
