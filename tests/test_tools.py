@@ -245,6 +245,7 @@ def test_rate_limit_error_handling():
 
 def test_missing_api_key_handling(monkeypatch):
     monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    monkeypatch.setattr("system1_mcp.client.resolve_api_key", lambda: (None, "none"))
     set_client(None)
 
     res = guard_impl(command="git status", goal="test")
