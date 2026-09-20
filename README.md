@@ -1,7 +1,7 @@
 # System 1 MCP Server
 
 [![CI](https://github.com/ericmaddox/system1-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/ericmaddox/system1-mcp/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/system1-mcp?logo=pypi)](https://pypi.org/project/system1-mcp/)
+[![PyPI](https://img.shields.io/pypi/v/system1-mcp?logo=pypi&color=blue)](https://pypi.org/project/system1-mcp/)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
