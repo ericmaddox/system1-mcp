@@ -388,7 +388,7 @@ See [AGENTS.md](AGENTS.md) in this repository for the full reference implementat
 ## Development and Testing
 
 ```bash
-# Run unit test suite (27 offline unit tests)
+# Run unit test suite (30 offline unit tests)
 pytest tests/ -v -m "not integration"
 
 # Run integration tests against the live TypeSafe Jev API (requires TYPESAFE_API_KEY)
