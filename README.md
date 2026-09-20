@@ -7,18 +7,74 @@
 
 **A Jev-powered System 1 reflex engine for AI agents via Model Context Protocol (MCP).**
 
-Modern AI agents (Claude Desktop, Cursor, Antigravity, OpenHands, Hermes) typically route every decision through a full large language model deliberation loop—even for fast binary checks such as determining if a command is destructive or selecting among known configuration paths. This introduces 1,500–3,000 ms of latency and burns unnecessary tokens per evaluation.
+In cognitive psychology (Daniel Kahneman's *Thinking, Fast and Slow*), intelligence operates on two systems:
+- **System 1**: Fast, instinctive, calibrated subconscious reflexes (~100 ms).
+- **System 2**: Slow, deliberative, logical, token-heavy conscious reasoning (~2–5 seconds).
 
-**System 1 MCP** provides agents with calibrated, low-latency **System 1 reflexes**. Powered by [TypeSafe](https://typesafe.ai)'s Jev model, System 1 MCP exposes 4 specialized MCP tools that return typed probabilities and discrete verdicts in approximately 50–150 ms without chain-of-thought token generation.
+Modern AI agents (Claude Desktop, Cursor, Antigravity, OpenHands, Hermes) currently lack System 1. They use heavy large language model deliberation for **every single micro-decision**—including trivial checks like *"is this command destructive?"*, *"did these tests pass?"*, or *"which of these 3 files should I inspect?"*. This burns 1,500–3,000 ms of latency and hundreds of tokens per check.
+
+**System 1 MCP gives agents their missing reflex layer.** Powered by [TypeSafe](https://typesafe.ai)'s Jev model, System 1 MCP equips agents with 4 high-speed reflex tools (`fast_guard`, `fast_judge`, `fast_verify`, `fast_score`) that return typed probabilities and discrete verdicts in ~50–150 ms without chain-of-thought token generation.
+
+---
+
+## What Changes When You Install System 1 MCP?
+
+| Task | Without System 1 MCP (Traditional LLM Loop) | With System 1 MCP (Reflex-Augmented Agent) |
+|---|---|---|
+| **Terminal Safety Check** | Agent pauses for 2–4 seconds, generating 300+ tokens of chain-of-thought deliberation to guess if a command is destructive. | Agent calls `fast_guard`. In **150 ms**, it receives `{"action": "block", "is_destructive": 0.98, "blast_radius": 2.0}` and halts safely. |
+| **Selecting 1 of Candidate Files** | Agent reads candidate files into context (burning 2,000+ prompt tokens) or deliberates over text reasoning. | Agent passes file descriptions to `fast_judge`. In **180 ms**, it selects `tsconfig.json` with 100% confidence using **0 completion tokens**. |
+| **Verifying Goal or Test Completion** | Agent re-reads terminal scrollback and reasons through raw logs for 2–3 seconds. | Agent feeds output to `fast_verify`. In **150 ms**, it receives `{"is_true": true, "assessment": "high_confidence_yes"}`. |
+| **Evaluating Alert Severity** | Agent writes multiple paragraphs analyzing failure modes. | Agent queries `fast_score`. In **180 ms**, it gets a calibrated continuous rating (`1.95 / 2.0`) with exact class probabilities. |
+
+---
+
+## How the Agent Uses It (Lifecycle Walkthrough)
+
+Once configured in your editor (via `uvx system1-mcp install`), the tools appear directly in the agent's MCP tool palette:
 
 ```
-Agent (Claude / Cursor / Antigravity)
-   │
-   ▼  [MCP stdio JSON-RPC]
-System 1 MCP Server
-   │
-   ▼  [Single TypeSafe API call ~50-150ms]
-TypeSafe Jev (System One) ──► Calibrated Probabilities & Decisions
+1. User prompt: "Clean up temporary build artifacts."
+      │
+      ▼
+2. Agent proposes shell command: `rm -rf build/ dist/`
+      │
+      ▼
+3. Agent automatically invokes MCP tool:
+   `fast_guard(command="rm -rf build/ dist/", goal="clean artifacts")`
+      │
+      ▼  [TypeSafe Jev ~150ms]
+4. System 1 MCP returns verdict:
+   {"action": "block", "is_destructive": 0.98, "blast_radius": 1.0}
+      │
+      ▼
+5. Agent halts execution, respects the reflex boundary, and requests user confirmation:
+   "This command will forcefully delete build/ and dist/. Do you want to proceed?"
+```
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                 Host AI Agent Loop                      │
+│        (Claude Desktop / Cursor / Antigravity)          │
+└───────────────────────────┬─────────────────────────────┘
+                            │
+              Calls MCP Tool (JSON-RPC stdio)
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────┐
+│                 System 1 MCP Server                     │
+│  - fast_guard (safety & blast radius)                   │
+│  - fast_judge (best-option selection)                   │
+│  - fast_verify (assertion & goal validation)            │
+│  - fast_score (spectrum & severity rating)              │
+└───────────────────────────┬─────────────────────────────┘
+                            │
+             Single HTTP call to api.typesafe.ai
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────┐
+│             TypeSafe Jev (System One Model)             │
+│        Sub-50ms inference • Calibrated probabilities    │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ---
