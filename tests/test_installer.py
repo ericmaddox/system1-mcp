@@ -7,6 +7,7 @@ import pytest
 from system1_mcp.installer import (
     build_mcp_entry,
     clean_jsonc,
+    get_system_paths,
     inspect_targets,
     install_to_target,
 )
@@ -29,6 +30,13 @@ def test_clean_jsonc():
     data = json.loads(cleaned)
     assert "mcpServers" in data
     assert "existing" in data["mcpServers"]
+
+
+def test_cursor_uses_native_mcp_json(tmp_path):
+    for system in ("Windows", "Darwin", "Linux"):
+        path = get_system_paths(system, tmp_path)["cursor"]["path"]
+        assert path == tmp_path / ".cursor" / "mcp.json"
+        assert "cline_mcp_settings.json" not in path.as_posix()
 
 
 def test_build_mcp_entry():
