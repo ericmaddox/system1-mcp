@@ -48,7 +48,7 @@ def get_system_paths(system: Optional[str] = None, base_dir: Optional[Path] = No
             },
             "cursor": {
                 "name": "Cursor",
-                "path": appdata / "Cursor" / "User" / "globalStorage" / "saoudrizwan.claude-dev" / "settings" / "cline_mcp_settings.json",
+                "path": home / ".cursor" / "mcp.json",
                 "schema": "standard",
             },
             "antigravity": {
@@ -88,7 +88,7 @@ def get_system_paths(system: Optional[str] = None, base_dir: Optional[Path] = No
             },
             "cursor": {
                 "name": "Cursor",
-                "path": app_support / "Cursor" / "User" / "globalStorage" / "saoudrizwan.claude-dev" / "settings" / "cline_mcp_settings.json",
+                "path": home / ".cursor" / "mcp.json",
                 "schema": "standard",
             },
             "antigravity": {
@@ -128,7 +128,7 @@ def get_system_paths(system: Optional[str] = None, base_dir: Optional[Path] = No
             },
             "cursor": {
                 "name": "Cursor",
-                "path": config_dir / "Cursor" / "User" / "globalStorage" / "saoudrizwan.claude-dev" / "settings" / "cline_mcp_settings.json",
+                "path": home / ".cursor" / "mcp.json",
                 "schema": "standard",
             },
             "antigravity": {
