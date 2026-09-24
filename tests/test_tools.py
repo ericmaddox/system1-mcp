@@ -203,6 +203,29 @@ def test_guard_blast_radius_malformed_legend_fallback():
     assert "Isolated" in res["blast_radius"]["legend"][0]
 
 
+def test_guard_blast_radius_high_risk_escalation():
+    """Verify that system-wide / external blast radius (>=2.0) with moderate risk escalates to 'block'."""
+    mock_client = MagicMock()
+    mock_client.system_one.return_value = make_mock_system_one_response({
+        "is_destructive": NoulAnswer(noul=0.10),
+        "is_dangerous": NoulAnswer(noul=0.55),  # Moderate danger: >= 0.40 review_threshold, < 0.70 danger_block
+        "is_out_of_scope": NoulAnswer(noul=0.20),
+        "blast_radius": ScoreAnswer(
+            score=2.02,  # System-wide impact (>= 2.0)
+            confidence=0.92,
+            legend={0: "Isolated", 1: "Workspace", 2: "System-wide", 3: "External"},
+            probabilities={0: 0.0, 1: 0.05, 2: 0.85, 3: 0.10},
+        ),
+    })
+
+    # Under standard rules without high blast radius, danger=0.55 would only be 'review' (< 0.70 danger_block)
+    # But because blast_score >= 2.0 and danger >= review_threshold (0.40), it escalates to 'block'
+    res = guard_impl(command="iptables -F", goal="Flush network firewall rules", client=mock_client)
+    assert res["action"] == "block"
+    assert res["blast_radius"]["score"] == 2.02
+
+
+
 
 def test_guard_validation():
     res1 = guard_impl(command="", goal="test")

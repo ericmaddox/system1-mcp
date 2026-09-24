@@ -55,6 +55,8 @@ Thumbs.db
 .system1/
 .fastpath/
 
-# Benchmark runs and replay logs
+# Benchmark runs and replay logs (generic ignore, but track golden replay records)
 *.jsonl
+!tests/records_eval_run2.jsonl
+
 
