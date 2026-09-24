@@ -120,7 +120,8 @@ def guard_impl(
         else (review_threshold if review_threshold != DEFAULT_REVIEW_THRESHOLD else DEFAULT_SCOPE_REVIEW_THRESHOLD)
     )
 
-    # 1. Block: high danger, or destructive actions extending beyond workspace
+    # 1. Block: high danger, or destructive actions extending beyond workspace,
+    # or system-wide/external blast radius (>= 2.0) with moderate danger/destruction
     if p_dangerous >= effective_danger_block:
         action = "block"
     elif p_destructive >= effective_destruct_block:
@@ -130,6 +131,8 @@ def guard_impl(
             action = "review"
         else:
             action = "block"
+    elif blast_score >= 2.0 and (p_dangerous >= review_threshold or p_destructive >= review_threshold):
+        action = "block"
     # 2. Review: moderate destructive or dangerous risks
     elif p_destructive >= review_threshold or p_dangerous >= review_threshold:
         action = "review"

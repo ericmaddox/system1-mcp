@@ -158,12 +158,12 @@ def test_guard_per_signal_thresholds():
     mock_client.system_one.return_value = make_mock_system_one_response({
         "is_destructive": NoulAnswer(noul=0.75),
         "is_dangerous": NoulAnswer(noul=0.30),
-        "is_out_of_scope": NoulAnswer(noul=0.10),
+        "is_out_of_scope": NoulAnswer(noul=0.50),
         "blast_radius": ScoreAnswer(
-            score=2.0,
+            score=1.0,
             confidence=0.9,
             legend={0: "Isolated", 1: "Workspace", 2: "System-wide", 3: "External"},
-            probabilities={0: 0.0, 1: 0.1, 2: 0.8, 3: 0.1},
+            probabilities={0: 0.1, 1: 0.8, 2: 0.1, 3: 0.0},
         ),
     })
 
