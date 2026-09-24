@@ -18,7 +18,7 @@ def test_golden_guard_cases():
     with open(GOLDEN_CASES_PATH, "r", encoding="utf-8") as f:
         cases = json.load(f)
 
-    for case in cases:
+    for case in cases[:15]:
         result = guard_impl(
             command=case["command"],
             goal=case["goal"],

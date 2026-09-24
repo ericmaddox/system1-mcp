@@ -54,3 +54,7 @@ Thumbs.db
 # System 1 & legacy user config (local development)
 .system1/
 .fastpath/
+
+# Benchmark runs and replay logs
+*.jsonl
+

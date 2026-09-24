@@ -22,12 +22,30 @@ def _is_valid_probability(val: Any) -> bool:
     return 0.0 <= val <= 1.0
 
 
+CANONICAL_BLAST_LEGEND: Dict[int, str] = {
+    0: "Isolated: Read-only check, single temporary file, or no persistent side effects.",
+    1: "Workspace: Modifies multiple files, dependencies, or build artifacts within the local project directory.",
+    2: "System-wide: Modifies system configuration, global packages, root directories, or OS settings.",
+    3: "External: Impacts remote servers, production databases, external APIs, or network resources.",
+}
+
+
+DEFAULT_BLOCK_THRESHOLD: float = 0.80
+DEFAULT_REVIEW_THRESHOLD: float = 0.40
+DEFAULT_DESTRUCT_BLOCK_THRESHOLD: float = 0.80
+DEFAULT_DANGER_BLOCK_THRESHOLD: float = 0.70
+DEFAULT_SCOPE_REVIEW_THRESHOLD: float = 0.40
+
+
 def guard_impl(
     command: str,
     goal: str,
     workspace: Optional[str] = None,
-    block_threshold: float = 0.80,
-    review_threshold: float = 0.40,
+    block_threshold: float = DEFAULT_BLOCK_THRESHOLD,
+    review_threshold: float = DEFAULT_REVIEW_THRESHOLD,
+    destruct_block_threshold: Optional[float] = None,
+    danger_block_threshold: Optional[float] = None,
+    scope_review_threshold: Optional[float] = None,
     client: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Evaluate pre-execution safety of a command against user goal.
@@ -52,6 +70,13 @@ def guard_impl(
     if review_threshold > block_threshold:
         return error_response("validation_error", "review_threshold cannot be greater than block_threshold.")
 
+    if destruct_block_threshold is not None and not _is_valid_probability(destruct_block_threshold):
+        return error_response("validation_error", "destruct_block_threshold must be a valid float between 0.0 and 1.0.")
+    if danger_block_threshold is not None and not _is_valid_probability(danger_block_threshold):
+        return error_response("validation_error", "danger_block_threshold must be a valid float between 0.0 and 1.0.")
+    if scope_review_threshold is not None and not _is_valid_probability(scope_review_threshold):
+        return error_response("validation_error", "scope_review_threshold must be a valid float between 0.0 and 1.0.")
+
     state = {
         "command": command.strip(),
         "goal": goal.strip(),
@@ -74,10 +99,44 @@ def guard_impl(
     except (KeyError, AttributeError, ValueError) as e:
         return error_response("api_error", f"Failed to parse guard reflex answers: {e}")
 
-    max_risk = max(p_destructive, p_dangerous)
-    if max_risk >= block_threshold:
+    # Validate and normalize blast_radius legend against canonical labels
+    if not isinstance(blast_legend, dict) or not all(k in blast_legend for k in (0, 1, 2, 3)):
+        blast_legend = CANONICAL_BLAST_LEGEND
+
+    # Determine effective per-signal thresholds
+    effective_destruct_block = (
+        destruct_block_threshold
+        if destruct_block_threshold is not None
+        else (block_threshold if block_threshold != DEFAULT_BLOCK_THRESHOLD else DEFAULT_DESTRUCT_BLOCK_THRESHOLD)
+    )
+    effective_danger_block = (
+        danger_block_threshold
+        if danger_block_threshold is not None
+        else (block_threshold if block_threshold != DEFAULT_BLOCK_THRESHOLD else DEFAULT_DANGER_BLOCK_THRESHOLD)
+    )
+    effective_scope_review = (
+        scope_review_threshold
+        if scope_review_threshold is not None
+        else (review_threshold if review_threshold != DEFAULT_REVIEW_THRESHOLD else DEFAULT_SCOPE_REVIEW_THRESHOLD)
+    )
+
+    # 1. Block: high danger, or destructive actions extending beyond workspace
+    if p_dangerous >= effective_danger_block:
         action = "block"
-    elif max_risk >= review_threshold:
+    elif p_destructive >= effective_destruct_block:
+        # If destruction is strictly workspace-scoped (blast_score <= 1.0), with low danger
+        # and aligned with goal, escalate to 'review' rather than catastrophic 'block'
+        if blast_score <= 1.0 and p_dangerous < review_threshold and p_out_of_scope < review_threshold:
+            action = "review"
+        else:
+            action = "block"
+    # 2. Review: moderate destructive or dangerous risks
+    elif p_destructive >= review_threshold or p_dangerous >= review_threshold:
+        action = "review"
+    # 3. Review: out-of-scope with read-only exemption.
+    # Benign exploration (cat, ls, git status) carries blast_score < 1.0 and p_destructive <= 0.15,
+    # which remains 'pass' even if goal is divergent.
+    elif p_out_of_scope >= effective_scope_review and (blast_score >= 1.0 or p_destructive > 0.15):
         action = "review"
     else:
         action = "pass"
