@@ -54,3 +54,24 @@ def test_cli_doctor_cache_status(tmp_path, monkeypatch, capsys):
         assert "Hits:" in captured.err
         assert "Misses:" in captured.err
         assert "Cache TTL:" in captured.err
+        assert "Decision Backend Status:" in captured.err
+
+
+def test_cli_config_backend_and_model_path(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("SYSTEM1_CONFIG_DIR", str(tmp_path))
+
+    # set-backend
+    ret_b = main(["config", "set-backend", "local"])
+    assert ret_b == 0
+
+    # set-model-path
+    ret_m = main(["config", "set-model-path", str(tmp_path / "models")])
+    assert ret_m == 0
+
+    # show
+    ret_show = main(["config", "show"])
+    assert ret_show == 0
+    captured = capsys.readouterr()
+    assert "Backend Mode:     local" in captured.out
+    assert "Local Model Path:" in captured.out
+

@@ -152,7 +152,25 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         except Exception as e:
             print(f"  Status:        {icons['fail']} Connection failed: {e}", file=sys.stderr)
 
-    # 4. Target IDE Detection
+    # 4. Decision Backend & Local Model Status
+    from system1_mcp.backend import VerdictBackend
+    from system1_mcp.config import resolve_local_model_path
+
+    cfg = load_config()
+    print("\nDecision Backend Status:", file=sys.stderr)
+    print(f"  Configured Mode: {cfg.backend}", file=sys.stderr)
+
+    local_path = resolve_local_model_path(cfg.local_model_path)
+    if local_path:
+        local_backend = VerdictBackend(model_dir=local_path)
+        avail = local_backend.is_available
+        status_str = f"{icons['ok']} Ready (CPU ONNX)" if avail else f"{icons['fail']} Missing dependencies (onnxruntime/tokenizers)"
+        print(f"  Local Model:   {status_str}", file=sys.stderr)
+        print(f"  Model Path:    {local_path}", file=sys.stderr)
+    else:
+        print(f"  Local Model:   Not installed (place in ~/.system1/models/verdict or set local_model_path)", file=sys.stderr)
+
+    # 5. Target IDE Detection
     print("\nDetected IDE Configurations:", file=sys.stderr)
     targets = inspect_targets()
     for t in targets:
@@ -160,14 +178,13 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         config_str = f"Configured {icons['ok']}" if t.configured else "Not Configured"
         print(f"  {t.name:20} [{detect_str:13}] -> {config_str}", file=sys.stderr)
 
-    # 5. Response Cache Status
+    # 6. Response Cache Status
     from system1_mcp.cache import get_cache_stats
     cache_stats = get_cache_stats()
     hits = int(cache_stats.get("hits", 0))
     misses = int(cache_stats.get("misses", 0))
     total = hits + misses
     hit_ratio = (hits / total * 100.0) if total > 0 else 0.0
-    cfg = load_config()
 
     print("\nResponse Cache Status:", file=sys.stderr)
     print(f"  Hits:          {hits}", file=sys.stderr)
@@ -197,15 +214,42 @@ def cmd_config(args: argparse.Namespace) -> int:
         print(f"Saved key to {p}", file=sys.stderr)
         return 0
 
+    if action == "set-backend":
+        if not args.key:
+            print("Error: Specify backend via `system1-mcp config set-backend <typesafe|local|auto>`", file=sys.stderr)
+            return 1
+        val = args.key.strip().lower()
+        if val not in ("typesafe", "local", "auto"):
+            print("Error: Backend must be one of: 'typesafe', 'local', 'auto'", file=sys.stderr)
+            return 1
+        cfg = load_config()
+        cfg.backend = val
+        p = save_config(cfg)
+        print(f"Saved backend mode '{val}' to {p}", file=sys.stderr)
+        return 0
+
+    if action == "set-model-path":
+        if not args.key:
+            print("Error: Specify path via `system1-mcp config set-model-path <PATH>`", file=sys.stderr)
+            return 1
+        p_val = args.key.strip()
+        cfg = load_config()
+        cfg.local_model_path = p_val
+        p = save_config(cfg)
+        print(f"Saved local_model_path '{p_val}' to {p}", file=sys.stderr)
+        return 0
+
     # Default: show config
     cfg = load_config()
     key, src = resolve_api_key()
     print("System 1 Configuration:")
-    print(f"  Config path:     {get_config_path()}")
-    print(f"  Active API Key:  {mask_api_key(key)} (from {src})")
-    print(f"  Default Model:   {cfg.default_model}")
-    print(f"  Timeout (s):     {cfg.timeout_seconds}")
-    print(f"  Cache TTL (s):   {cfg.cache_ttl_seconds}")
+    print(f"  Config path:      {get_config_path()}")
+    print(f"  Active API Key:   {mask_api_key(key)} (from {src})")
+    print(f"  Backend Mode:     {cfg.backend}")
+    print(f"  Local Model Path: {cfg.local_model_path or '<default search>'}")
+    print(f"  Default Model:    {cfg.default_model}")
+    print(f"  Timeout (s):      {cfg.timeout_seconds}")
+    print(f"  Cache TTL (s):    {cfg.cache_ttl_seconds}")
     return 0
 
 
@@ -246,8 +290,15 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # Config command
     config_parser = subparsers.add_parser("config", help="Manage ~/.system1/config.json")
-    config_parser.add_argument("action", nargs="?", default="show", choices=["show", "path", "set-key"], help="Config action")
-    config_parser.add_argument("key", nargs="?", help="API key value (for set-key)")
+    config_parser.add_argument(
+        "action",
+        nargs="?",
+        default="show",
+        choices=["show", "path", "set-key", "set-backend", "set-model-path"],
+        help="Config action",
+    )
+    config_parser.add_argument("key", nargs="?", help="Value (for set-key, set-backend, set-model-path)")
+
 
     parsed = parser.parse_args(raw_args)
 

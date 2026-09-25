@@ -301,9 +301,47 @@ Agents frequently re-evaluate identical commands or assertions in validation loo
 
 ---
 
+## Pluggable Decision Backends & Local Fallback
+
+System 1 MCP features a pluggable backend abstraction (`DecisionBackend`) supporting three execution strategies:
+
+1. **`typesafe`**: Dispatches requests exclusively to the cloud TypeSafe API (`api.typesafe.ai`) for hosted Jev models.
+2. **`local`**: Executes queries offline on local hardware using the Verdict Open-Jev ONNX build (~150M ModernBERT parameters) via CPU ONNX Runtime with zero PyTorch or CUDA dependencies.
+3. **`auto` (Default)**: Attempts the high-fidelity TypeSafe API first; if the network is disconnected, times out, or the API key is unconfigured, it automatically and seamlessly fails over to the local Verdict model. If both are unavailable, it returns a structured `fallback_action: "escalate"` response.
+
+### Local Backend Model Specification
+
+- **Architecture**: GLiClass / ModernBERT-base (`answerdotai/ModernBERT-base`, ~151M parameters)
+- **Repository Source**: Pinned to [`heman10x/rlcd-modernbert-151m`](https://huggingface.co/heman10x/rlcd-modernbert-151m) at revision `8af2496eb63c7fa66d7d234e1f62629380030eb4`.
+- **Checkpoint Artifact**: `model.onnx` (SHA-256: `4ae01f822538b000fa0e55859d4b3e6b40871d860149397e8784428b2a42ee5e`).
+- **Dependencies**: Pure CPU runtime via `onnxruntime`, `tokenizers`, and `numpy` (installable via `pip install "system1-mcp[local]"`).
+
+> **Advisory on Local Model Evaluation**: Verdict's accuracy and calibration claims are self-reported and unverified by independent benchmarks. Treat any local backend as a degraded-but-fast fallback when offline or during cloud outages, not as mathematically equivalent to full TypeSafe Jev models.
+
+### Backend Configuration
+
+Configure your backend mode and model path via CLI or `~/.system1/config.json`:
+
+```bash
+# Set backend execution mode
+system1-mcp config set-backend auto      # Options: auto | typesafe | local
+
+# Set custom directory containing model.onnx and tokenizer.json
+system1-mcp config set-model-path /path/to/verdict
+
+# Inspect backend status and local model readiness
+system1-mcp doctor
+```
+
+Alternatively, set environment variables:
+- `SYSTEM1_BACKEND`: `auto`, `typesafe`, or `local`
+- `SYSTEM1_LOCAL_MODEL_PATH`: Directory containing `model.onnx` and `tokenizer.json` (defaults to `~/.system1/models/verdict`)
+
+---
+
 ## Resilience and Graceful Escalation
 
-When API errors, network timeouts, or rate limits occur, System 1 MCP maintains standard MCP connection stability and does not terminate the JSON-RPC channel. Instead, it emits a structured fallback payload:
+When API errors, network timeouts, or rate limits occur and no local fallback model is available, System 1 MCP maintains standard MCP connection stability and does not terminate the JSON-RPC channel. Instead, it emits a structured fallback payload:
 
 ```json
 {
@@ -334,7 +372,7 @@ uvx system1-mcp install --api-key ts_live_your_key_here
 
 ### Option B: Health Check and Diagnostics (`doctor`)
 
-Inspect installation status, identify detected configuration paths, and measure live API latency:
+Inspect installation status, identify detected configuration paths, verify local model readiness, and measure live API latency:
 
 ```bash
 uvx system1-mcp doctor
@@ -342,7 +380,7 @@ uvx system1-mcp doctor
 
 Sample output:
 ```
->> System 1 MCP Diagnostics (v0.1.3)
+>> System 1 MCP Diagnostics (v0.1.5)
 
 Environment:
   Python:        3.11.15
@@ -355,15 +393,27 @@ API Key Status:
 
 Live TypeSafe Jev Connectivity:
   Status:        [OK] Connected to api.typesafe.ai
-  Model:         jev-latest
-  Roundtrip:     64.2ms
+  Model:         jev-1.13.0
+  Roundtrip:     >> 124.4ms
   Calibration:   P(valid) = 0.99
+
+Decision Backend Status:
+  Configured Mode: auto
+  Local Model:   [OK] Ready (CPU ONNX)
+  Model Path:    ~/.system1/models/verdict
 
 Detected IDE Configurations:
   Claude Desktop       [Detected     ] -> Configured [OK]
   Cursor               [Detected     ] -> Configured [OK]
   Google Antigravity   [Detected     ] -> Configured [OK]
+
+Response Cache Status:
+  Hits:          42
+  Misses:        5
+  Hit Ratio:     89.4%
+  Cache TTL:     300s
 ```
+
 
 ---
 

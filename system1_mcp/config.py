@@ -10,7 +10,7 @@ import json
 import os
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, Union
 from dotenv import load_dotenv
 
 
@@ -22,6 +22,8 @@ class System1Config:
     default_model: str = "jev-latest"
     timeout_seconds: float = 5.0
     cache_ttl_seconds: float = 300.0
+    backend: str = "auto"
+    local_model_path: Optional[str] = None
 
 
 def get_config_dir() -> Path:
@@ -128,6 +130,42 @@ def resolve_api_key() -> Tuple[Optional[str], str]:
     return None, "missing"
 
 
+def resolve_local_model_path(custom_path: Optional[Union[str, Path]] = None) -> Optional[Path]:
+    """Resolve the directory containing the local Verdict ONNX model and tokenizer.
+
+    Resolution order:
+    1. Explicit custom_path argument
+    2. config.local_model_path from persisted ~/.system1/config.json
+    3. SYSTEM1_LOCAL_MODEL_PATH environment variable
+    4. ~/.system1/models/verdict
+    """
+
+    candidates = []
+    if custom_path:
+        candidates.append(Path(custom_path))
+
+    persisted = load_persisted_config()
+    cfg_path = persisted.get("local_model_path")
+    if cfg_path:
+        candidates.append(Path(cfg_path))
+
+    env_path = os.environ.get("SYSTEM1_LOCAL_MODEL_PATH")
+    if env_path:
+        candidates.append(Path(env_path))
+
+    # Standard user configuration path (~/.system1/models/verdict)
+    candidates.append(get_config_dir() / "models" / "verdict")
+
+    for cand in candidates:
+        if cand.is_dir():
+            model_file = cand / "model.onnx"
+            tokenizer_file = cand / "tokenizer.json"
+            if model_file.is_file() and tokenizer_file.is_file():
+                return cand
+
+    return None
+
+
 def load_config() -> System1Config:
     """Load full System1Config merging file persistence and environment."""
     persisted = load_persisted_config()
@@ -137,6 +175,8 @@ def load_config() -> System1Config:
     default_model = persisted.get("default_model", "jev-latest")
     timeout = float(persisted.get("timeout_seconds", 5.0))
     cache_ttl = float(persisted.get("cache_ttl_seconds", os.environ.get("SYSTEM1_CACHE_TTL", 300.0)))
+    backend = os.environ.get("SYSTEM1_BACKEND") or persisted.get("backend", "auto")
+    local_model = os.environ.get("SYSTEM1_LOCAL_MODEL_PATH") or persisted.get("local_model_path")
 
     return System1Config(
         api_key=key,
@@ -144,4 +184,7 @@ def load_config() -> System1Config:
         default_model=default_model,
         timeout_seconds=timeout,
         cache_ttl_seconds=cache_ttl,
+        backend=backend.lower().strip(),
+        local_model_path=str(local_model) if local_model else None,
     )
+

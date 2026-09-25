@@ -103,60 +103,38 @@ def set_client(client: Optional[TypeSafeClient]) -> None:
     _CLIENT_INSTANCE = client
 
 
+from system1_mcp.backend import (
+    DecisionBackend,
+    FallbackBackend,
+    TypeSafeBackend,
+    VerdictBackend,
+    get_backend,
+)
+
+
 def execute_system_one(
     state: Dict[str, Any],
     questions: Mapping[str, Union[Noul, Choice, Score]],
     model: str = DEFAULT_MODEL,
     client: Optional[TypeSafeClient] = None,
+    backend: Optional[DecisionBackend] = None,
 ) -> Union[SystemOneResponse, Dict[str, Any]]:
-    """Execute a System One call against Jev with safe error catching.
+    """Execute a System One call against Jev or configured backend with safe error catching.
 
     Returns:
         SystemOneResponse on success, or a structured error dict on failure.
     """
-    try:
-        active_client = client or get_client()
-        response = active_client.system_one(
-            state=state,
-            questions=questions,
-            model=model,
-        )
-        return response
-    except ValueError as e:
-        clean_msg = _sanitize_error_message(str(e))
-        if "TYPESAFE_API_KEY" in clean_msg:
-            return error_response(
-                "missing_api_key",
-                clean_msg,
-            )
-        return error_response("validation_error", clean_msg)
-    except TypeSafeAuthenticationError as e:
-        return error_response(
-            "missing_api_key",
-            f"Authentication failed: {_sanitize_error_message(str(e))}",
-        )
-    except TypeSafeAPITimeoutError as e:
-        return error_response(
-            "api_timeout",
-            f"TypeSafe API request timed out after {DEFAULT_TIMEOUT_SECONDS}s: {_sanitize_error_message(str(e))}",
-        )
-    except TypeSafeRateLimitError as e:
-        return error_response(
-            "rate_limited",
-            f"TypeSafe API rate limit exceeded: {_sanitize_error_message(str(e))}",
-        )
-    except TypeSafeAPIConnectionError as e:
-        return error_response(
-            "api_error",
-            f"Connection error reaching TypeSafe API: {_sanitize_error_message(str(e))}",
-        )
-    except TypeSafeAPIError as e:
-        return error_response(
-            "api_error",
-            f"TypeSafe API error: {_sanitize_error_message(str(e))}",
-        )
-    except Exception as e:
-        return error_response(
-            "api_error",
-            f"Unexpected error executing System One reflex: {_sanitize_error_message(str(e))}",
-        )
+    if backend is not None:
+        active_backend = backend
+    elif client is not None:
+        # Explicit client injection routes to TypeSafeBackend
+        active_backend = TypeSafeBackend(client=client)
+    else:
+        active_backend = get_backend()
+
+    return active_backend.execute(
+        state=state,
+        questions=questions,
+        model=model,
+    )
+
