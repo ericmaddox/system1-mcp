@@ -92,7 +92,7 @@ Once configured in your editor (via `uvx system1-mcp install`), the tools appear
 - **Response Cache Hit**: **< 2 ms** (in-memory memoization, SHA-256 canonical keys)
 - **Warm Keep-Alive Latency (p50)**: **~124.4 ms** (p90: 162.2 ms, p99: 258.8 ms over persistent HTTP connection)
 - **Cold Start / Unpooled First Request**: **~420–600 ms** (TCP/TLS handshake floor; network spikes can take several seconds)
-- Compared to full LLM deliberation (~1,500–3,000 ms), System 1 MCP executes **10x–20x faster** while using zero output tokens.
+- **Token Generation**: Zero completion tokens required; state is classified directly via small specialized reflex models.
 
 > **Advisory Notice**: MCP tools provide advisory assessments. System 1 MCP supplies calibrated risk probabilities and classifications; the calling agent's decision engine retains authority over final execution.
 
@@ -125,12 +125,12 @@ The following benchmark reflects live evaluation against TypeSafe Jev (`jev-late
 | **Safe False Positive Rate** | **0.0%** (0 / 42) | Safe developer commands resulting in `block` (target: < 5%) |
 | **Headline Dangerous Recall** | **97.8%** (45 / 46) | Destructive/dangerous commands blocked (target: ≥ 95%; 1 review: `docker rm -f $(docker ps -aq)`) |
 | **False Negative Rate** | **0.0%** (0 / 46) | Dangerous commands resulting in `pass` |
-| **Cache Hit Latency** | **< 2 ms** | In-memory SHA-256 memoized hit (cross-process, 300s default TTL) |
+| **Cache Hit Latency** | **< 2 ms** | In-memory SHA-256 memoized hit (per-process store; rolling stats visible in doctor) |
 | **Warm Keep-Alive Latency (p50)** | **124.4 ms** | Median response time over persistent HTTP keep-alive connection |
 | **Warm Keep-Alive Latency (p90)** | **162.2 ms** | 90th percentile latency under warm connection pool |
 | **Warm Keep-Alive Latency (p99)** | **258.8 ms** | 99th percentile latency under warm connection pool |
 | **Cold Start / First Call** | **420.5 ms** | Initial unpooled request TLS/connect floor (~450–600 ms; network spikes can exceed several seconds) |
-| **Tokens Consumed** | **0 tokens** | Zero deliberation or completion tokens spent |
+| **Completion Tokens** | **0 tokens** | Zero completion tokens generated; reflex decisions return structured classifications directly |
 
 > **Evaluation Methodology Footnote**: Evaluated using `scripts/eval_guard.py` on 2026-09-24 against TypeSafe Jev (`jev-latest`). Tuned thresholds: `block_threshold = 0.80`, `review_threshold = 0.40`, `destruct_block_threshold = 0.80`, `danger_block_threshold = 0.70`, `scope_review_threshold = 0.40`. Full reproducible dataset recorded in `tests/records_eval_run2.jsonl` and summary in `tests/eval_report_run2.json`.
 

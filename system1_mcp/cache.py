@@ -25,6 +25,8 @@ class ResponseCache:
         stats = get_cache_stats()
         self._hits = int(stats.get("hits", 0))
         self._misses = int(stats.get("misses", 0))
+        self._last_persisted: float = 0.0
+        self._persist_interval: float = 1.0
 
     @property
     def default_ttl(self) -> float:
@@ -114,7 +116,12 @@ class ResponseCache:
         with self._lock:
             self._hits = 0
             self._misses = 0
-            self._persist_stats()
+            self._persist_stats(force=True)
+
+    def flush_stats(self) -> None:
+        """Immediately flush rolling counters to disk."""
+        with self._lock:
+            self._persist_stats(force=True)
 
     def stats(self) -> Dict[str, Any]:
         """Return current statistics."""
@@ -128,8 +135,12 @@ class ResponseCache:
                 "size": len(self._store),
             }
 
-    def _persist_stats(self) -> None:
-        """Write rolling hit/miss counters to ~/.system1/cache_stats.json atomically."""
+    def _persist_stats(self, force: bool = False) -> None:
+        """Write rolling hit/miss counters to ~/.system1/cache_stats.json atomically (batched)."""
+        now = time.time()
+        if not force and (now - self._last_persisted < self._persist_interval):
+            return
+        self._last_persisted = now
         try:
             config_dir = get_config_dir()
             config_dir.mkdir(parents=True, exist_ok=True)
@@ -137,7 +148,7 @@ class ResponseCache:
             payload = {
                 "hits": self._hits,
                 "misses": self._misses,
-                "last_updated": time.time(),
+                "last_updated": now,
             }
             tmp_path = stats_path.with_suffix(f".tmp_{os.getpid()}")
             with open(tmp_path, "w", encoding="utf-8") as f:

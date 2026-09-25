@@ -206,12 +206,14 @@ def test_persistent_stats_file_for_doctor():
 
     # Miss
     cache.get(key)
+    cache.flush_stats()
     stats1 = get_cache_stats()
     assert stats1["misses"] >= 1
 
     # Populate and hit
     cache.set(key, {"action": "pass"})
     cache.get(key)
+    cache.flush_stats()
     stats2 = get_cache_stats()
     assert stats2["hits"] >= 1
 
