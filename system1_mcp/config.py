@@ -21,6 +21,7 @@ class System1Config:
     endpoint: Optional[str] = None
     default_model: str = "jev-latest"
     timeout_seconds: float = 5.0
+    cache_ttl_seconds: float = 300.0
 
 
 def get_config_dir() -> Path:
@@ -135,10 +136,12 @@ def load_config() -> System1Config:
     endpoint = os.environ.get("TYPESAFE_ENDPOINT") or persisted.get("endpoint")
     default_model = persisted.get("default_model", "jev-latest")
     timeout = float(persisted.get("timeout_seconds", 5.0))
+    cache_ttl = float(persisted.get("cache_ttl_seconds", os.environ.get("SYSTEM1_CACHE_TTL", 300.0)))
 
     return System1Config(
         api_key=key,
         endpoint=endpoint,
         default_model=default_model,
         timeout_seconds=timeout,
+        cache_ttl_seconds=cache_ttl,
     )

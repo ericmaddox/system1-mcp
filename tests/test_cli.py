@@ -42,3 +42,15 @@ def test_cli_doctor_missing_key(monkeypatch, capsys):
         assert ret == 0
         captured = capsys.readouterr()
         assert "Missing TYPESAFE_API_KEY" in captured.err or "System 1 MCP Diagnostics" in captured.err
+
+
+def test_cli_doctor_cache_status(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("SYSTEM1_CONFIG_DIR", str(tmp_path))
+    with patch("system1_mcp.cli.resolve_api_key", return_value=(None, "missing")):
+        ret = main(["doctor"])
+        assert ret == 0
+        captured = capsys.readouterr()
+        assert "Response Cache Status:" in captured.err
+        assert "Hits:" in captured.err
+        assert "Misses:" in captured.err
+        assert "Cache TTL:" in captured.err

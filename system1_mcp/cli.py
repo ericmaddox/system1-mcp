@@ -160,6 +160,21 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         config_str = f"Configured {icons['ok']}" if t.configured else "Not Configured"
         print(f"  {t.name:20} [{detect_str:13}] -> {config_str}", file=sys.stderr)
 
+    # 5. Response Cache Status
+    from system1_mcp.cache import get_cache_stats
+    cache_stats = get_cache_stats()
+    hits = int(cache_stats.get("hits", 0))
+    misses = int(cache_stats.get("misses", 0))
+    total = hits + misses
+    hit_ratio = (hits / total * 100.0) if total > 0 else 0.0
+    cfg = load_config()
+
+    print("\nResponse Cache Status:", file=sys.stderr)
+    print(f"  Hits:          {hits}", file=sys.stderr)
+    print(f"  Misses:        {misses}", file=sys.stderr)
+    print(f"  Hit Ratio:     {hit_ratio:.1f}%", file=sys.stderr)
+    print(f"  Cache TTL:     {cfg.cache_ttl_seconds:.0f}s", file=sys.stderr)
+
     print("", file=sys.stderr)
     return 0
 
@@ -190,6 +205,7 @@ def cmd_config(args: argparse.Namespace) -> int:
     print(f"  Active API Key:  {mask_api_key(key)} (from {src})")
     print(f"  Default Model:   {cfg.default_model}")
     print(f"  Timeout (s):     {cfg.timeout_seconds}")
+    print(f"  Cache TTL (s):   {cfg.cache_ttl_seconds}")
     return 0
 
 

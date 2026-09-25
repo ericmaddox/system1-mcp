@@ -5,12 +5,15 @@ from typing import Any, Dict, List, Optional, Union
 from typesafe_sdk import Choice, Noul, NoulCriteria, Score, SystemOneResponse
 
 from system1_mcp.batteries import GUARD_BATTERY
-from system1_mcp.client import execute_system_one
+from system1_mcp.cache import get_cache
+from system1_mcp.client import DEFAULT_MODEL, execute_system_one
 from system1_mcp.errors import error_response
 
 # Maximum payload size in characters for single string inputs to prevent memory exhaustion / DoS
 MAX_INPUT_LENGTH = 128_000
 MAX_OPTIONS_COUNT = 100
+LARGE_OPTIONS_THRESHOLD = 20
+DEFAULT_MARGIN_THRESHOLD = 0.30
 
 
 def _is_valid_probability(val: Any) -> bool:
@@ -46,6 +49,7 @@ def guard_impl(
     destruct_block_threshold: Optional[float] = None,
     danger_block_threshold: Optional[float] = None,
     scope_review_threshold: Optional[float] = None,
+    bypass_cache: bool = False,
     client: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Evaluate pre-execution safety of a command against user goal.
@@ -77,10 +81,53 @@ def guard_impl(
     if scope_review_threshold is not None and not _is_valid_probability(scope_review_threshold):
         return error_response("validation_error", "scope_review_threshold must be a valid float between 0.0 and 1.0.")
 
-    state = {
+    # Determine effective per-signal thresholds
+    effective_destruct_block = (
+        destruct_block_threshold
+        if destruct_block_threshold is not None
+        else (block_threshold if block_threshold != DEFAULT_BLOCK_THRESHOLD else DEFAULT_DESTRUCT_BLOCK_THRESHOLD)
+    )
+    effective_danger_block = (
+        danger_block_threshold
+        if danger_block_threshold is not None
+        else (block_threshold if block_threshold != DEFAULT_BLOCK_THRESHOLD else DEFAULT_DANGER_BLOCK_THRESHOLD)
+    )
+    effective_scope_review = (
+        scope_review_threshold
+        if scope_review_threshold is not None
+        else (review_threshold if review_threshold != DEFAULT_REVIEW_THRESHOLD else DEFAULT_SCOPE_REVIEW_THRESHOLD)
+    )
+
+    normalized_inputs = {
         "command": command.strip(),
         "goal": goal.strip(),
         "workspace": (workspace or "").strip() if isinstance(workspace, str) else "",
+    }
+    effective_thresholds = {
+        "block_threshold": block_threshold,
+        "danger_block_threshold": effective_danger_block,
+        "destruct_block_threshold": effective_destruct_block,
+        "review_threshold": review_threshold,
+        "scope_review_threshold": effective_scope_review,
+    }
+
+    cache = get_cache()
+    cache_key = cache.compute_key(
+        tool="fast_guard",
+        inputs=normalized_inputs,
+        model=DEFAULT_MODEL,
+        thresholds=effective_thresholds,
+    )
+
+    if not bypass_cache:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+    state = {
+        "command": normalized_inputs["command"],
+        "goal": normalized_inputs["goal"],
+        "workspace": normalized_inputs["workspace"],
     }
 
     res = execute_system_one(state=state, questions=GUARD_BATTERY, client=client)
@@ -102,23 +149,6 @@ def guard_impl(
     # Validate and normalize blast_radius legend against canonical labels
     if not isinstance(blast_legend, dict) or not all(k in blast_legend for k in (0, 1, 2, 3)):
         blast_legend = CANONICAL_BLAST_LEGEND
-
-    # Determine effective per-signal thresholds
-    effective_destruct_block = (
-        destruct_block_threshold
-        if destruct_block_threshold is not None
-        else (block_threshold if block_threshold != DEFAULT_BLOCK_THRESHOLD else DEFAULT_DESTRUCT_BLOCK_THRESHOLD)
-    )
-    effective_danger_block = (
-        danger_block_threshold
-        if danger_block_threshold is not None
-        else (block_threshold if block_threshold != DEFAULT_BLOCK_THRESHOLD else DEFAULT_DANGER_BLOCK_THRESHOLD)
-    )
-    effective_scope_review = (
-        scope_review_threshold
-        if scope_review_threshold is not None
-        else (review_threshold if review_threshold != DEFAULT_REVIEW_THRESHOLD else DEFAULT_SCOPE_REVIEW_THRESHOLD)
-    )
 
     # 1. Block: high danger, or destructive actions extending beyond workspace,
     # or system-wide/external blast radius (>= 2.0) with moderate danger/destruction
@@ -144,7 +174,7 @@ def guard_impl(
     else:
         action = "pass"
 
-    return {
+    res_dict = {
         "action": action,
         "is_destructive": round(p_destructive, 4),
         "is_dangerous": round(p_dangerous, 4),
@@ -153,7 +183,13 @@ def guard_impl(
             "score": round(blast_score, 2),
             "legend": blast_legend,
         },
+        "cache_hit": False,
     }
+
+    if not bypass_cache:
+        cache.set(cache_key, res_dict)
+
+    return res_dict
 
 
 def judge_impl(
@@ -161,6 +197,8 @@ def judge_impl(
     options: Dict[str, Optional[str]],
     context: Optional[Union[str, Dict[str, Any]]] = None,
     confidence_floor: float = 0.60,
+    margin_threshold: float = DEFAULT_MARGIN_THRESHOLD,
+    bypass_cache: bool = False,
     client: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Select the best option from a set of candidates with probability distribution."""
@@ -199,10 +237,35 @@ def judge_impl(
 
     if not _is_valid_probability(confidence_floor):
         return error_response("validation_error", "confidence_floor must be a valid float between 0.0 and 1.0.")
+    if not _is_valid_probability(margin_threshold):
+        return error_response("validation_error", "margin_threshold must be a valid float between 0.0 and 1.0.")
+
+    normalized_inputs = {
+        "context": context if context is not None else "",
+        "options": sanitized_options,
+        "question": question.strip(),
+    }
+    effective_thresholds = {
+        "confidence_floor": confidence_floor,
+        "margin_threshold": margin_threshold,
+    }
+
+    cache = get_cache()
+    cache_key = cache.compute_key(
+        tool="fast_judge",
+        inputs=normalized_inputs,
+        model=DEFAULT_MODEL,
+        thresholds=effective_thresholds,
+    )
+
+    if not bypass_cache:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
 
     state = {
-        "question": question.strip(),
-        "context": context if context is not None else "",
+        "question": normalized_inputs["question"],
+        "context": normalized_inputs["context"],
     }
 
     questions = {
@@ -226,12 +289,29 @@ def judge_impl(
     except (KeyError, AttributeError, ValueError) as e:
         return error_response("api_error", f"Failed to parse judge reflex answers: {e}")
 
-    return {
+    # Margin-based confidence for large candidate sets (>20 options)
+    if len(sanitized_options) > LARGE_OPTIONS_THRESHOLD:
+        sorted_probs = sorted(probabilities.values(), reverse=True)
+        p_top1 = sorted_probs[0] if len(sorted_probs) > 0 else confidence
+        p_top2 = sorted_probs[1] if len(sorted_probs) > 1 else 0.0
+        is_confident = (p_top1 - p_top2) >= margin_threshold
+    else:
+        is_confident = confidence >= confidence_floor
+
+    res_dict = {
         "choice": choice_ans.choice,
         "confidence": round(confidence, 4),
         "probabilities": probabilities,
-        "is_confident": confidence >= confidence_floor,
+        "is_confident": is_confident,
+        "cache_hit": False,
     }
+    if len(sanitized_options) > LARGE_OPTIONS_THRESHOLD:
+        res_dict["warning"] = "accuracy degrades with >20 options; consider staged elimination"
+
+    if not bypass_cache:
+        cache.set(cache_key, res_dict)
+
+    return res_dict
 
 
 def verify_impl(
@@ -239,11 +319,12 @@ def verify_impl(
     evidence: Union[str, Dict[str, Any]],
     yes_means: Optional[str] = None,
     no_means: Optional[str] = None,
+    bypass_cache: bool = False,
     client: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Check whether a condition is true or a task goal has been met.
 
-    Uses strict state isolation to prevent prompt/instruction injection breakouts.
+    Evaluates whether the statement is supported by evidence in structured reflex state.
     """
     if not isinstance(statement, str) or not statement.strip():
         return error_response("validation_error", "Statement must be a non-empty string.")
@@ -258,17 +339,38 @@ def verify_impl(
     if no_means and isinstance(no_means, str) and len(no_means) > MAX_INPUT_LENGTH:
         return error_response("validation_error", f"no_means exceeds maximum allowed length ({MAX_INPUT_LENGTH} chars).")
 
-    state = {
-        "statement": statement.strip(),
+    normalized_inputs = {
         "evidence": evidence,
+        "no_means": no_means.strip() if (isinstance(no_means, str) and no_means.strip()) else None,
+        "statement": statement.strip(),
+        "yes_means": yes_means.strip() if (isinstance(yes_means, str) and yes_means.strip()) else None,
+    }
+    effective_thresholds: Dict[str, Any] = {}
+
+    cache = get_cache()
+    cache_key = cache.compute_key(
+        tool="fast_verify",
+        inputs=normalized_inputs,
+        model=DEFAULT_MODEL,
+        thresholds=effective_thresholds,
+    )
+
+    if not bypass_cache:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+    state = {
+        "statement": normalized_inputs["statement"],
+        "evidence": normalized_inputs["evidence"],
     }
 
     criteria = NoulCriteria(
-        true=yes_means.strip() if (isinstance(yes_means, str) and yes_means.strip()) else "The claim in `statement` is accurate and directly supported by `evidence`.",
-        false=no_means.strip() if (isinstance(no_means, str) and no_means.strip()) else "The claim in `statement` is unproven, inaccurate, or contradicted by `evidence`.",
+        true=normalized_inputs["yes_means"] if normalized_inputs["yes_means"] else "The claim in `statement` is accurate and directly supported by `evidence`.",
+        false=normalized_inputs["no_means"] if normalized_inputs["no_means"] else "The claim in `statement` is unproven, inaccurate, or contradicted by `evidence`.",
     )
 
-    # Secure question definition: statement is strictly isolated in `state`
+    # Question definition with statement and evidence placed in state
     questions = {
         "verification": Noul(
             instructions="Based on the information provided in `evidence`, is the claim in `statement` true?",
@@ -299,11 +401,17 @@ def verify_impl(
     else:
         assessment = "high_confidence_no"
 
-    return {
+    res_dict = {
         "probability": round(p, 4),
         "is_true": p >= 0.50,
         "assessment": assessment,
+        "cache_hit": False,
     }
+
+    if not bypass_cache:
+        cache.set(cache_key, res_dict)
+
+    return res_dict
 
 
 def score_impl(
@@ -311,6 +419,7 @@ def score_impl(
     levels: List[str],
     content: Union[str, Dict[str, Any]],
     confidence_floor: float = 0.60,
+    bypass_cache: bool = False,
     client: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Rate content along an ordered multi-level scale."""
@@ -338,9 +447,31 @@ def score_impl(
     if not _is_valid_probability(confidence_floor):
         return error_response("validation_error", "confidence_floor must be a valid float between 0.0 and 1.0.")
 
-    state = {
-        "question": question.strip(),
+    normalized_inputs = {
         "content": content,
+        "levels": sanitized_levels,
+        "question": question.strip(),
+    }
+    effective_thresholds = {
+        "confidence_floor": confidence_floor,
+    }
+
+    cache = get_cache()
+    cache_key = cache.compute_key(
+        tool="fast_score",
+        inputs=normalized_inputs,
+        model=DEFAULT_MODEL,
+        thresholds=effective_thresholds,
+    )
+
+    if not bypass_cache:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+    state = {
+        "question": normalized_inputs["question"],
+        "content": normalized_inputs["content"],
     }
 
     questions = {
@@ -366,10 +497,16 @@ def score_impl(
     except (KeyError, AttributeError, ValueError) as e:
         return error_response("api_error", f"Failed to parse score reflex answers: {e}")
 
-    return {
+    res_dict = {
         "score": round(score_val, 2),
         "confidence": round(confidence, 4),
         "legend": legend,
         "probabilities": probabilities,
         "is_confident": confidence >= confidence_floor,
+        "cache_hit": False,
     }
+
+    if not bypass_cache:
+        cache.set(cache_key, res_dict)
+
+    return res_dict
