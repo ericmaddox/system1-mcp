@@ -17,7 +17,7 @@ In cognitive psychology (Daniel Kahneman's *Thinking, Fast and Slow*), intellige
 
 Modern AI agents (Claude Desktop, Cursor, Antigravity, OpenHands, Hermes) currently lack System 1. They use heavy large language model deliberation for **every single micro-decision**—including trivial checks like *"is this command destructive?"*, *"did these tests pass?"*, or *"which of these 3 files should I inspect?"*. This burns 1,500–3,000 ms of latency and hundreds of tokens per check.
 
-**System 1 MCP gives agents their missing reflex layer.** Powered by [TypeSafe](https://typesafe.ai)'s Jev model, System 1 MCP equips agents with 4 high-speed reflex tools (`fast_guard`, `fast_judge`, `fast_verify`, `fast_score`) that return typed probabilities and discrete verdicts in ~50–150 ms without chain-of-thought token generation.
+**System 1 MCP gives agents their missing reflex layer.** Powered by [TypeSafe](https://typesafe.ai)'s Jev model, System 1 MCP equips agents with 4 high-speed reflex tools (`fast_guard`, `fast_judge`, `fast_verify`, `fast_score`) that return typed probabilities and discrete verdicts in **~124 ms warm** (~450–600 ms cold) without chain-of-thought token generation.
 
 > **Executive Summary**: TypeSafe provides the foundational model; System 1 MCP provides the **agent runtime integration layer**. It bridges raw classification heads into live agent workflows by packaging pre-calibrated safety batteries, enforcing fail-safe escalation, and automating single-command deployment across Claude Desktop, Cursor, Antigravity, and Windsurf.
 
@@ -27,10 +27,10 @@ Modern AI agents (Claude Desktop, Cursor, Antigravity, OpenHands, Hermes) curren
 
 | Task | Without System 1 MCP (Traditional LLM Loop) | With System 1 MCP (Reflex-Augmented Agent) |
 |---|---|---|
-| **Terminal Safety Check** | Agent pauses for 2–4 seconds, generating 300+ tokens of chain-of-thought deliberation to guess if a command is destructive. | Agent calls `fast_guard`. In **150 ms**, it receives `{"action": "block", "is_destructive": 0.98, "blast_radius": 2.0}` and halts safely. |
-| **Selecting 1 of Candidate Files** | Agent reads candidate files into context (burning 2,000+ prompt tokens) or deliberates over text reasoning. | Agent passes file descriptions to `fast_judge`. In **180 ms**, it selects `tsconfig.json` with 100% confidence using **0 completion tokens**. |
-| **Verifying Goal or Test Completion** | Agent re-reads terminal scrollback and reasons through raw logs for 2–3 seconds. | Agent feeds output to `fast_verify`. In **150 ms**, it receives `{"is_true": true, "assessment": "high_confidence_yes"}`. |
-| **Evaluating Alert Severity** | Agent writes multiple paragraphs analyzing failure modes. | Agent queries `fast_score`. In **180 ms**, it gets a calibrated continuous rating (`1.95 / 2.0`) with exact class probabilities. |
+| **Terminal Safety Check** | Agent pauses for 2–4 seconds, generating 300+ tokens of chain-of-thought deliberation to guess if a command is destructive. | Agent calls `fast_guard`. In **~124 ms warm** (~450–600 ms cold), it receives `{"action": "block", "is_destructive": 0.98, "blast_radius": 2.0}` and halts safely. |
+| **Selecting 1 of Candidate Files** | Agent reads candidate files into context (burning 2,000+ prompt tokens) or deliberates over text reasoning. | Agent passes file descriptions to `fast_judge`. In **~124 ms warm**, it selects `tsconfig.json` with 100% confidence using **0 completion tokens**. |
+| **Verifying Goal or Test Completion** | Agent re-reads terminal scrollback and reasons through raw logs for 2–3 seconds. | Agent feeds output to `fast_verify`. In **~124 ms warm**, it receives `{"is_true": true, "assessment": "high_confidence_yes"}`. |
+| **Evaluating Alert Severity** | Agent writes multiple paragraphs analyzing failure modes. | Agent queries `fast_score`. In **~124 ms warm**, it gets a calibrated continuous rating (`1.95 / 2.0`) with exact class probabilities. |
 
 ---
 
@@ -48,7 +48,7 @@ Once configured in your editor (via `uvx system1-mcp install`), the tools appear
 3. Agent automatically invokes MCP tool:
    `fast_guard(command="rm -rf build/ dist/", goal="clean artifacts")`
       │
-      ▼  [TypeSafe Jev ~150ms]
+      ▼  [TypeSafe Jev ~124ms warm / ~450–600ms cold]
 4. System 1 MCP returns verdict:
    {"action": "block", "is_destructive": 0.98, "blast_radius": 1.0}
       │
@@ -79,7 +79,7 @@ Once configured in your editor (via `uvx system1-mcp install`), the tools appear
                             ▼
 ┌─────────────────────────────────────────────────────────┐
 │             TypeSafe Jev (System One Model)             │
-│        Sub-50ms inference • Calibrated probabilities    │
+│   ~124ms warm keep-alive • Calibrated probabilities     │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -370,6 +370,12 @@ system1-mcp config set-model-path /path/to/verdict
 system1-mcp doctor
 ```
 
+Alternatively, configure via environment variables:
+- `SYSTEM1_BACKEND`: Execution mode (`auto`, `typesafe`, or `local`)
+- `SYSTEM1_ALLOW_EXPERIMENTAL_FALLBACK`: Set to `1` or `true` to permit fallback to experimental local models
+- `SYSTEM1_LOCAL_MODEL_PATH`: Directory containing `model.onnx` and `tokenizer.json` (defaults to `~/.system1/models/verdict`)
+- `SYSTEM1_CACHE_TTL`: Cache entry time-to-live in seconds (defaults to `300`)
+
 ---
 
 ## Resilience and Graceful Escalation
@@ -515,7 +521,7 @@ See [AGENTS.md](AGENTS.md) in this repository for the full reference implementat
 ## Development and Testing
 
 ```bash
-# Run unit test suite (30 offline unit tests)
+# Run unit test suite (65+ offline unit tests)
 pytest tests/ -v -m "not integration"
 
 # Run integration tests against the live TypeSafe Jev API (requires TYPESAFE_API_KEY)
