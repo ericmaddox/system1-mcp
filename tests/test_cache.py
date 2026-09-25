@@ -46,8 +46,9 @@ def test_cache_key_sha256_canonical_format():
     model = "jev-latest"
     thresholds = {"block_threshold": 0.8, "review_threshold": 0.4}
 
-    # Expected key according to Phase 2 specification
+    # Expected key according to canonical specification (including backend)
     expected_payload = {
+        "backend": "typesafe",
         "inputs": inputs,
         "model": model,
         "thresholds": thresholds,

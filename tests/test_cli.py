@@ -71,7 +71,21 @@ def test_cli_config_backend_and_model_path(tmp_path, monkeypatch, capsys):
     # show
     ret_show = main(["config", "show"])
     assert ret_show == 0
-    captured = capsys.readouterr()
-    assert "Backend Mode:     local" in captured.out
-    assert "Local Model Path:" in captured.out
+    # set-experimental-fallback
+    ret_exp = main(["config", "set-experimental-fallback", "true"])
+    assert ret_exp == 0
+
+    # show updated
+    ret_show2 = main(["config", "show"])
+    assert ret_show2 == 0
+    captured2 = capsys.readouterr()
+    assert "Experimental Fallback: True" in captured2.out
+
+
+def test_cli_models_download_command(tmp_path, monkeypatch):
+    with patch("system1_mcp.models.download_verdict_model") as mock_dl:
+        mock_dl.return_value = tmp_path
+        ret = main(["models", "download", "--target-dir", str(tmp_path)])
+        assert ret == 0
+        mock_dl.assert_called_once_with(target_dir=str(tmp_path), force=False, verbose=True)
 

@@ -24,6 +24,8 @@ class System1Config:
     cache_ttl_seconds: float = 300.0
     backend: str = "auto"
     local_model_path: Optional[str] = None
+    allow_experimental_fallback: bool = False
+
 
 
 def get_config_dir() -> Path:
@@ -177,6 +179,11 @@ def load_config() -> System1Config:
     cache_ttl = float(persisted.get("cache_ttl_seconds", os.environ.get("SYSTEM1_CACHE_TTL", 300.0)))
     backend = os.environ.get("SYSTEM1_BACKEND") or persisted.get("backend", "auto")
     local_model = os.environ.get("SYSTEM1_LOCAL_MODEL_PATH") or persisted.get("local_model_path")
+    env_exp = os.environ.get("SYSTEM1_ALLOW_EXPERIMENTAL_FALLBACK")
+    if env_exp is not None:
+        allow_exp = env_exp.lower().strip() in ("1", "true", "yes")
+    else:
+        allow_exp = bool(persisted.get("allow_experimental_fallback", False))
 
     return System1Config(
         api_key=key,
@@ -186,5 +193,7 @@ def load_config() -> System1Config:
         cache_ttl_seconds=cache_ttl,
         backend=backend.lower().strip(),
         local_model_path=str(local_model) if local_model else None,
+        allow_experimental_fallback=allow_exp,
     )
+
 

@@ -43,9 +43,11 @@ class ResponseCache:
         inputs: Dict[str, Any],
         model: str,
         thresholds: Dict[str, Any],
+        backend: str = "typesafe",
     ) -> str:
-        """Compute canonical SHA-256 cache key from tool, inputs, model, and thresholds."""
+        """Compute canonical SHA-256 cache key from tool, inputs, model, thresholds, and backend."""
         canonical = {
+            "backend": backend,
             "inputs": inputs,
             "model": model,
             "thresholds": thresholds,
@@ -54,6 +56,7 @@ class ResponseCache:
         # sort_keys ensures identical JSON representation regardless of dict insertion order
         canonical_str = json.dumps(canonical, sort_keys=True)
         return hashlib.sha256(canonical_str.encode("utf-8")).hexdigest()
+
 
     def get(self, key: str) -> Optional[Dict[str, Any]]:
         """Retrieve entry from cache. Returns None on miss or expiration."""

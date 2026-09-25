@@ -99,6 +99,16 @@ def cmd_install(args: argparse.Namespace) -> int:
             configured_count += 1
 
     print(f"\nDone! Configured {configured_count} environment(s).", file=sys.stderr)
+
+    if getattr(args, "with_local_model", False):
+        print(f"\n{icons['bolt']} Downloading pinned Verdict local model weights...", file=sys.stderr)
+        from system1_mcp.models import download_verdict_model
+        try:
+            download_verdict_model(verbose=True)
+            print(f"{icons['ok']} Local Verdict model installed successfully.", file=sys.stderr)
+        except Exception as e:
+            print(f"{icons['fail']} Failed to download local model: {e}", file=sys.stderr)
+
     return 0
 
 
@@ -158,17 +168,18 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
     cfg = load_config()
     print("\nDecision Backend Status:", file=sys.stderr)
-    print(f"  Configured Mode: {cfg.backend}", file=sys.stderr)
+    print(f"  Configured Mode:       {cfg.backend}", file=sys.stderr)
+    print(f"  Experimental Fallback: {'Enabled' if cfg.allow_experimental_fallback else 'Disabled (safe default)'}", file=sys.stderr)
 
     local_path = resolve_local_model_path(cfg.local_model_path)
     if local_path:
         local_backend = VerdictBackend(model_dir=local_path)
         avail = local_backend.is_available
         status_str = f"{icons['ok']} Ready (CPU ONNX)" if avail else f"{icons['fail']} Missing dependencies (onnxruntime/tokenizers)"
-        print(f"  Local Model:   {status_str}", file=sys.stderr)
-        print(f"  Model Path:    {local_path}", file=sys.stderr)
+        print(f"  Local Model:           {status_str}", file=sys.stderr)
+        print(f"  Model Path:            {local_path}", file=sys.stderr)
     else:
-        print(f"  Local Model:   Not installed (place in ~/.system1/models/verdict or set local_model_path)", file=sys.stderr)
+        print(f"  Local Model:           Not installed (run 'system1-mcp models download' to install)", file=sys.stderr)
 
     # 5. Target IDE Detection
     print("\nDetected IDE Configurations:", file=sys.stderr)
@@ -239,18 +250,50 @@ def cmd_config(args: argparse.Namespace) -> int:
         print(f"Saved local_model_path '{p_val}' to {p}", file=sys.stderr)
         return 0
 
+    if action == "set-experimental-fallback":
+        if not args.key:
+            print("Error: Specify true/false via `system1-mcp config set-experimental-fallback <true|false>`", file=sys.stderr)
+            return 1
+        val = args.key.strip().lower() in ("true", "1", "yes")
+        cfg = load_config()
+        cfg.allow_experimental_fallback = val
+        p = save_config(cfg)
+        print(f"Saved allow_experimental_fallback={val} to {p}", file=sys.stderr)
+        return 0
+
     # Default: show config
     cfg = load_config()
     key, src = resolve_api_key()
     print("System 1 Configuration:")
-    print(f"  Config path:      {get_config_path()}")
-    print(f"  Active API Key:   {mask_api_key(key)} (from {src})")
-    print(f"  Backend Mode:     {cfg.backend}")
-    print(f"  Local Model Path: {cfg.local_model_path or '<default search>'}")
-    print(f"  Default Model:    {cfg.default_model}")
-    print(f"  Timeout (s):      {cfg.timeout_seconds}")
-    print(f"  Cache TTL (s):    {cfg.cache_ttl_seconds}")
+    print(f"  Config path:           {get_config_path()}")
+    print(f"  Active API Key:        {mask_api_key(key)} (from {src})")
+    print(f"  Backend Mode:          {cfg.backend}")
+    print(f"  Experimental Fallback: {cfg.allow_experimental_fallback}")
+    print(f"  Local Model Path:      {cfg.local_model_path or '<default search>'}")
+    print(f"  Default Model:         {cfg.default_model}")
+    print(f"  Timeout (s):           {cfg.timeout_seconds}")
+    print(f"  Cache TTL (s):         {cfg.cache_ttl_seconds}")
     return 0
+
+
+def cmd_models(args: argparse.Namespace) -> int:
+    """Handle the 'models' subcommand."""
+    action = getattr(args, "models_action", None)
+    if action == "download":
+        from system1_mcp.models import download_verdict_model
+        try:
+            download_verdict_model(
+                target_dir=getattr(args, "target_dir", None),
+                force=getattr(args, "force", False),
+                verbose=True,
+            )
+            return 0
+        except Exception as e:
+            print(f"Error downloading model: {e}", file=sys.stderr)
+            return 1
+
+    print("Usage: system1-mcp models download [--force] [--target-dir <DIR>]", file=sys.stderr)
+    return 1
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -284,6 +327,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     install_parser.add_argument("--targets", help="Comma-separated target IDEs (e.g. 'claude,cursor,antigravity')")
     install_parser.add_argument("--mode", choices=["uvx", "python"], default="uvx", help="Invocation mode in IDE config (default: uvx)")
     install_parser.add_argument("--inject-env", action="store_true", help="Explicitly inject API key into the IDE config's 'env' block")
+    install_parser.add_argument("--with-local-model", action="store_true", help="Also download pinned local Verdict model weights (~151M)")
+
+    # Models command
+    models_parser = subparsers.add_parser("models", help="Manage local decision models")
+    models_sub = models_parser.add_subparsers(dest="models_action", help="Model actions")
+    download_parser = models_sub.add_parser("download", help="Download pinned Verdict local model artifacts (~151M)")
+    download_parser.add_argument("--force", action="store_true", help="Force re-download even if files exist and verify")
+    download_parser.add_argument("--target-dir", help="Custom destination directory (defaults to ~/.system1/models/verdict)")
 
     # Doctor command
     subparsers.add_parser("doctor", help="Run diagnostic health checks and latency benchmark")
@@ -294,11 +345,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         "action",
         nargs="?",
         default="show",
-        choices=["show", "path", "set-key", "set-backend", "set-model-path"],
+        choices=["show", "path", "set-key", "set-backend", "set-model-path", "set-experimental-fallback"],
         help="Config action",
     )
-    config_parser.add_argument("key", nargs="?", help="Value (for set-key, set-backend, set-model-path)")
-
+    config_parser.add_argument("key", nargs="?", help="Value (for set-key, set-backend, set-model-path, set-experimental-fallback)")
 
     parsed = parser.parse_args(raw_args)
 
@@ -307,6 +357,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
     elif parsed.subcommand == "install":
         return cmd_install(parsed)
+    elif parsed.subcommand == "models":
+        return cmd_models(parsed)
     elif parsed.subcommand == "doctor":
         return cmd_doctor(parsed)
     elif parsed.subcommand == "config":

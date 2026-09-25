@@ -40,6 +40,24 @@ DEFAULT_DANGER_BLOCK_THRESHOLD: float = 0.70
 DEFAULT_SCOPE_REVIEW_THRESHOLD: float = 0.40
 
 
+def _resolve_backend_name(
+    client: Optional[Any] = None,
+    backend: Optional[Any] = None,
+) -> str:
+    """Resolve backend name for cache key isolation."""
+    if backend is not None:
+        if hasattr(backend, "name"):
+            return str(backend.name)
+        return "custom"
+    if client is not None:
+        return "typesafe"
+    try:
+        from system1_mcp.backend import get_backend
+        return get_backend().name
+    except Exception:
+        return "typesafe"
+
+
 def guard_impl(
     command: str,
     goal: str,
@@ -51,6 +69,7 @@ def guard_impl(
     scope_review_threshold: Optional[float] = None,
     bypass_cache: bool = False,
     client: Optional[Any] = None,
+    backend: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Evaluate pre-execution safety of a command against user goal.
 
@@ -112,11 +131,13 @@ def guard_impl(
     }
 
     cache = get_cache()
+    backend_name = _resolve_backend_name(client=client, backend=backend)
     cache_key = cache.compute_key(
         tool="fast_guard",
         inputs=normalized_inputs,
         model=DEFAULT_MODEL,
         thresholds=effective_thresholds,
+        backend=backend_name,
     )
 
     if not bypass_cache:
@@ -130,7 +151,7 @@ def guard_impl(
         "workspace": normalized_inputs["workspace"],
     }
 
-    res = execute_system_one(state=state, questions=GUARD_BATTERY, client=client)
+    res = execute_system_one(state=state, questions=GUARD_BATTERY, client=client, backend=backend)
     if isinstance(res, dict) and res.get("error"):
         return res
 
@@ -200,6 +221,7 @@ def judge_impl(
     margin_threshold: float = DEFAULT_MARGIN_THRESHOLD,
     bypass_cache: bool = False,
     client: Optional[Any] = None,
+    backend: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Select the best option from a set of candidates with probability distribution."""
     if not isinstance(question, str) or not question.strip():
@@ -251,11 +273,13 @@ def judge_impl(
     }
 
     cache = get_cache()
+    backend_name = _resolve_backend_name(client=client, backend=backend)
     cache_key = cache.compute_key(
         tool="fast_judge",
         inputs=normalized_inputs,
         model=DEFAULT_MODEL,
         thresholds=effective_thresholds,
+        backend=backend_name,
     )
 
     if not bypass_cache:
@@ -275,7 +299,7 @@ def judge_impl(
         )
     }
 
-    res = execute_system_one(state=state, questions=questions, client=client)
+    res = execute_system_one(state=state, questions=questions, client=client, backend=backend)
     if isinstance(res, dict) and res.get("error"):
         return res
 
@@ -321,6 +345,7 @@ def verify_impl(
     no_means: Optional[str] = None,
     bypass_cache: bool = False,
     client: Optional[Any] = None,
+    backend: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Check whether a condition is true or a task goal has been met.
 
@@ -348,11 +373,13 @@ def verify_impl(
     effective_thresholds: Dict[str, Any] = {}
 
     cache = get_cache()
+    backend_name = _resolve_backend_name(client=client, backend=backend)
     cache_key = cache.compute_key(
         tool="fast_verify",
         inputs=normalized_inputs,
         model=DEFAULT_MODEL,
         thresholds=effective_thresholds,
+        backend=backend_name,
     )
 
     if not bypass_cache:
@@ -378,7 +405,7 @@ def verify_impl(
         )
     }
 
-    res = execute_system_one(state=state, questions=questions, client=client)
+    res = execute_system_one(state=state, questions=questions, client=client, backend=backend)
     if isinstance(res, dict) and res.get("error"):
         return res
 
@@ -421,6 +448,7 @@ def score_impl(
     confidence_floor: float = 0.60,
     bypass_cache: bool = False,
     client: Optional[Any] = None,
+    backend: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Rate content along an ordered multi-level scale."""
     if not isinstance(question, str) or not question.strip():
@@ -457,11 +485,13 @@ def score_impl(
     }
 
     cache = get_cache()
+    backend_name = _resolve_backend_name(client=client, backend=backend)
     cache_key = cache.compute_key(
         tool="fast_score",
         inputs=normalized_inputs,
         model=DEFAULT_MODEL,
         thresholds=effective_thresholds,
+        backend=backend_name,
     )
 
     if not bypass_cache:
@@ -481,7 +511,7 @@ def score_impl(
         )
     }
 
-    res = execute_system_one(state=state, questions=questions, client=client)
+    res = execute_system_one(state=state, questions=questions, client=client, backend=backend)
     if isinstance(res, dict) and res.get("error"):
         return res
 

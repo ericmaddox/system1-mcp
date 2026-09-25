@@ -5,14 +5,16 @@ import os
 from pathlib import Path
 import pytest
 
+from system1_mcp.config import resolve_api_key
 from system1_mcp.tools import guard_impl, judge_impl, score_impl, verify_impl
 
 GOLDEN_CASES_PATH = Path(__file__).parent / "golden_cases.json"
-HAS_API_KEY = bool(os.environ.get("TYPESAFE_API_KEY", "").strip())
+_api_key, _ = resolve_api_key()
+HAS_API_KEY = bool(_api_key)
 
 
 @pytest.mark.integration
-@pytest.mark.skipif(not HAS_API_KEY, reason="Requires TYPESAFE_API_KEY environment variable")
+@pytest.mark.skipif(not HAS_API_KEY, reason="Requires TYPESAFE_API_KEY configured")
 def test_golden_guard_cases():
     """Run all 15 golden cases against the live TypeSafe Jev model."""
     with open(GOLDEN_CASES_PATH, "r", encoding="utf-8") as f:

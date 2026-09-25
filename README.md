@@ -294,7 +294,8 @@ Evaluate inputs against an ordered scale (e.g., severity, priority, or alignment
 ## Response Caching & Memoization
 
 Agents frequently re-evaluate identical commands or assertions in validation loops. System 1 MCP includes an in-memory response cache:
-- **Canonical Keying**: Keyed on `sha256(json.dumps({"tool": tool_name, "inputs": normalized_inputs, "model": model_version, "thresholds": effective_thresholds}, sort_keys=True))`. Handles nested dictionary structures (`judge` options, `verify` evidence) cleanly without unhashable dict errors.
+- **Canonical Keying**: Keyed on `sha256(json.dumps({"backend": backend_name, "tool": tool_name, "inputs": normalized_inputs, "model": model_version, "thresholds": effective_thresholds}, sort_keys=True))`.
+- **Backend Isolation**: Incorporates serving backend (`typesafe`, `local`, `auto`) into the cache key so switching backends never serves a cross-backend cached response.
 - **Configurable TTL**: Defaults to 300 seconds (5 minutes); configurable via `cache_ttl_seconds` in `~/.system1/config.json` or `SYSTEM1_CACHE_TTL` environment variable.
 - **Latency**: Cache hits return in `< 2 ms`.
 - **Cross-Process Diagnostics**: `system1-mcp doctor` inspects persistent rolling hit/miss counters recorded in `~/.system1/cache_stats.json`.
@@ -305,9 +306,44 @@ Agents frequently re-evaluate identical commands or assertions in validation loo
 
 System 1 MCP features a pluggable backend abstraction (`DecisionBackend`) supporting three execution strategies:
 
-1. **`typesafe`**: Dispatches requests exclusively to the cloud TypeSafe API (`api.typesafe.ai`) for hosted Jev models.
-2. **`local`**: Executes queries offline on local hardware using the Verdict Open-Jev ONNX build (~150M ModernBERT parameters) via CPU ONNX Runtime with zero PyTorch or CUDA dependencies.
-3. **`auto` (Default)**: Attempts the high-fidelity TypeSafe API first; if the network is disconnected, times out, or the API key is unconfigured, it automatically and seamlessly fails over to the local Verdict model. If both are unavailable, it returns a structured `fallback_action: "escalate"` response.
+1. **`typesafe`**: Dispatches requests exclusively to the cloud TypeSafe API (`api.typesafe.ai`) for hosted Jev models (~124 ms warm).
+2. **`local`**: Executes queries offline on local hardware using the Verdict Open-Jev ONNX build (~151M ModernBERT parameters) via CPU ONNX Runtime with zero PyTorch or CUDA dependencies.
+3. **`auto` (Default)**: Attempts the high-fidelity TypeSafe API first. If disconnected or unconfigured, it checks if local weights are present and `allow_experimental_fallback` is enabled. If disabled or unavailable, it emits a structured `fallback_action: "escalate"` response so the agent can fall back to standard reasoning.
+
+### Experimental Safety Evaluation Notice (Verdict Model)
+
+> [!WARNING]
+> **Measured False-Positive Rate on Safety Decisions**: Independent evaluation of the pinned `heman10x/rlcd-modernbert-151m` checkpoint on the 104-case safety benchmark demonstrated a **90.5% false-positive rate on safe commands** (38/42 benign developer commands including `git status`, `ls -la`, and `cat package.json` were blocked). The base model is an intent classification checkpoint (Banking77/CLINC150) whose raw logits lack signal on shell-command safety.
+>
+> In addition, CPU inference measures **~2.6s/call warm** on CPU vs. **124.4ms warm** cloud API. The local backend provides offline continuity during total cloud outages, not a speedup.
+>
+> Consequently, `VerdictBackend` is **gated behind an explicit experimental flag** (`allow_experimental_fallback: false` by default). In `auto` mode, automatic failover to Verdict is **disabled by default** to prevent blocking safe developer workflows.
+
+To enable experimental fallback:
+```bash
+# Enable experimental local fallback via CLI
+system1-mcp config set-experimental-fallback true
+
+# Or set environment variable
+export SYSTEM1_ALLOW_EXPERIMENTAL_FALLBACK=1
+```
+
+### Universal Model-Weight Installation (`models download`)
+
+Model weights are not bundled with the pip package to keep installs lightweight (~1.5 MB). Install local weights on-demand:
+
+```bash
+# Download and verify pinned Verdict model weights (~151M) to ~/.system1/models/verdict
+system1-mcp models download
+
+# Or opt-in during automated IDE configuration
+system1-mcp install --with-local-model
+```
+
+- **Universal Storage Path**: `Path.home() / ".system1" / "models" / "verdict"` (`C:\Users\<user>\.system1\models\verdict` on Windows, `~/.system1/models/verdict` on macOS/Linux).
+- **Resolution Order**: `--model-path` flag > `config.json` `local_model_path` > `SYSTEM1_LOCAL_MODEL_PATH` env > `~/.system1/models/verdict`.
+- **Atomic & Verified**: Downloads `model.onnx`, `tokenizer.json`, and `calibrator.json` via HTTPS streaming with atomic temporary files. Skips download if the file already exists and matches hash.
+- **Cryptographic Supply-Chain Security**: Strictly verifies SHA-256 of `model.onnx` against pinned hash `4ae01f822538b000fa0e55859d4b3e6b40871d860149397e8784428b2a42ee5e` at both download time and load time.
 
 ### Local Backend Model Specification
 
@@ -316,15 +352,16 @@ System 1 MCP features a pluggable backend abstraction (`DecisionBackend`) suppor
 - **Checkpoint Artifact**: `model.onnx` (SHA-256: `4ae01f822538b000fa0e55859d4b3e6b40871d860149397e8784428b2a42ee5e`).
 - **Dependencies**: Pure CPU runtime via `onnxruntime`, `tokenizers`, and `numpy` (installable via `pip install "system1-mcp[local]"`).
 
-> **Advisory on Local Model Evaluation**: Verdict's accuracy and calibration claims are self-reported and unverified by independent benchmarks. Treat any local backend as a degraded-but-fast fallback when offline or during cloud outages, not as mathematically equivalent to full TypeSafe Jev models.
-
 ### Backend Configuration
 
-Configure your backend mode and model path via CLI or `~/.system1/config.json`:
+Configure backend mode, model path, and fallback behavior via CLI or `~/.system1/config.json`:
 
 ```bash
-# Set backend execution mode
-system1-mcp config set-backend auto      # Options: auto | typesafe | local
+# Set backend execution mode (auto | typesafe | local)
+system1-mcp config set-backend auto
+
+# Enable/disable experimental local fallback in auto mode
+system1-mcp config set-experimental-fallback true
 
 # Set custom directory containing model.onnx and tokenizer.json
 system1-mcp config set-model-path /path/to/verdict
@@ -332,10 +369,6 @@ system1-mcp config set-model-path /path/to/verdict
 # Inspect backend status and local model readiness
 system1-mcp doctor
 ```
-
-Alternatively, set environment variables:
-- `SYSTEM1_BACKEND`: `auto`, `typesafe`, or `local`
-- `SYSTEM1_LOCAL_MODEL_PATH`: Directory containing `model.onnx` and `tokenizer.json` (defaults to `~/.system1/models/verdict`)
 
 ---
 
@@ -366,8 +399,8 @@ System 1 MCP includes an automated installer that detects and configures Claude 
 # Interactive setup (prompts for API key and autodetects IDE installations)
 uvx system1-mcp install
 
-# Non-interactive setup with explicit key
-uvx system1-mcp install --api-key ts_live_your_key_here
+# Non-interactive setup with explicit key and local model download
+uvx system1-mcp install --api-key ts_live_your_key_here --with-local-model
 ```
 
 ### Option B: Health Check and Diagnostics (`doctor`)
@@ -380,32 +413,33 @@ uvx system1-mcp doctor
 
 Sample output:
 ```
->> System 1 MCP Diagnostics (v0.1.5)
+⚡ System 1 MCP Diagnostics (v0.2.0)
 
 Environment:
   Python:        3.11.15
   Config File:   ~/.system1/config.json (found)
 
 API Key Status:
-  Status:        [OK] Configured
+  Status:        ✅ Configured
   Resolved Key:  ts_...8f2a
   Source Origin: config_file
 
 Live TypeSafe Jev Connectivity:
-  Status:        [OK] Connected to api.typesafe.ai
+  Status:        ✅ Connected to api.typesafe.ai
   Model:         jev-1.13.0
-  Roundtrip:     >> 124.4ms
+  Roundtrip:     ⚡ 124.4ms
   Calibration:   P(valid) = 0.99
 
 Decision Backend Status:
-  Configured Mode: auto
-  Local Model:   [OK] Ready (CPU ONNX)
-  Model Path:    ~/.system1/models/verdict
+  Configured Mode:       auto
+  Experimental Fallback: Disabled (safe default)
+  Local Model:           ✅ Ready (CPU ONNX)
+  Model Path:            ~/.system1/models/verdict
 
 Detected IDE Configurations:
-  Claude Desktop       [Detected     ] -> Configured [OK]
-  Cursor               [Detected     ] -> Configured [OK]
-  Google Antigravity   [Detected     ] -> Configured [OK]
+  Claude Desktop       [Detected     ] -> Configured ✅
+  Cursor               [Detected     ] -> Configured ✅
+  Google Antigravity   [Detected     ] -> Configured ✅
 
 Response Cache Status:
   Hits:          42

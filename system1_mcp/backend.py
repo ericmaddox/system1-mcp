@@ -201,6 +201,12 @@ class VerdictBackend:
                     "Install with: pip install onnxruntime tokenizers numpy"
                 )
 
+            # Verify SHA-256 integrity of model.onnx
+            from system1_mcp.models import verify_model_integrity
+            ok, msg = verify_model_integrity(model_file)
+            if not ok:
+                raise ValueError(f"Corrupted or unauthorized Verdict model artifact: {msg}")
+
             # Initialize CPU ONNX session
             sess_options = ort.SessionOptions()
             sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
@@ -213,6 +219,7 @@ class VerdictBackend:
 
             # Initialize Rust tokenizer
             self._tokenizer = Tokenizer.from_file(str(tokenizer_file))
+
 
             # Load calibrator temperature if available
             if calibrator_file.is_file():
@@ -391,13 +398,17 @@ class FallbackBackend:
         self,
         primary: DecisionBackend,
         fallback: Optional[DecisionBackend] = None,
+        allow_experimental_fallback: bool = False,
+        name: Optional[str] = None,
     ):
         self.primary = primary
         self.fallback = fallback
+        self.allow_experimental_fallback = allow_experimental_fallback
+        self._name = name or (f"{self.primary.name}+fallback" if self.fallback else self.primary.name)
 
     @property
     def name(self) -> str:
-        return f"{self.primary.name}+fallback" if self.fallback else self.primary.name
+        return self._name
 
     def execute(
         self,
@@ -418,8 +429,20 @@ class FallbackBackend:
             # Fallback eligible error codes: missing key, network connection error, or timeout
             if code in ("missing_api_key", "api_error", "api_timeout"):
                 if self.fallback is not None:
+                    # Gated behind explicit experimental approval due to known 90.5% FPR on safety tasks
+                    if not self.allow_experimental_fallback:
+                        logger.warning(
+                            "Primary backend (%s) returned '%s'. Local fallback to Verdict is experimental "
+                            "and disabled by default due to high false-positive rates (measured 90.5%% FPR on safe commands). "
+                            "Enable by setting allow_experimental_fallback: true in ~/.system1/config.json "
+                            "or SYSTEM1_ALLOW_EXPERIMENTAL_FALLBACK=1.",
+                            self.primary.name,
+                            code,
+                        )
+                        return res
+
                     logger.info(
-                        "Primary backend (%s) returned '%s'; failing over to fallback backend (%s)",
+                        "Primary backend (%s) returned '%s'; failing over to experimental fallback backend (%s)",
                         self.primary.name,
                         code,
                         self.fallback.name,
@@ -440,6 +463,7 @@ def get_backend(
     name: Optional[str] = None,
     client: Optional[TypeSafeClient] = None,
     local_model_path: Optional[Union[str, Path]] = None,
+    allow_experimental_fallback: Optional[bool] = None,
 ) -> DecisionBackend:
     """Factory creating configured decision backend (typesafe, local, or auto).
 
@@ -447,6 +471,7 @@ def get_backend(
         name: Explicit backend mode ("typesafe", "local", or "auto"). Defaults to config.backend.
         client: Optional injected TypeSafeClient for testing/mocking.
         local_model_path: Optional path to local ONNX model directory.
+        allow_experimental_fallback: Whether to permit fallback to experimental local models.
     """
     config = load_config()
     mode = (name or config.backend or "auto").lower().strip()
@@ -457,9 +482,20 @@ def get_backend(
     if mode == "local":
         return VerdictBackend(model_dir=local_model_path or config.local_model_path)
 
-    # auto mode: TypeSafe primary with Verdict local fallback if available
+    # auto mode: TypeSafe primary with Verdict local fallback if available and enabled
     primary = TypeSafeBackend(client=client)
     local_backend = VerdictBackend(model_dir=local_model_path or config.local_model_path)
     fallback = local_backend if local_backend.is_available else None
+    allow_exp = (
+        allow_experimental_fallback
+        if allow_experimental_fallback is not None
+        else config.allow_experimental_fallback
+    )
 
-    return FallbackBackend(primary=primary, fallback=fallback)
+    return FallbackBackend(
+        primary=primary,
+        fallback=fallback,
+        allow_experimental_fallback=allow_exp,
+        name="auto",
+    )
+
