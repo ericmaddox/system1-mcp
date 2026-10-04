@@ -13,7 +13,6 @@ import threading
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Protocol, Tuple, Union
 
-import numpy as np
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -162,6 +161,7 @@ class VerdictBackend:
         if not (self.model_dir / "model.onnx").is_file() or not (self.model_dir / "tokenizer.json").is_file():
             return False
         try:
+            import numpy  # noqa: F401
             import onnxruntime  # noqa: F401
             import tokenizers  # noqa: F401
             return True
@@ -193,6 +193,7 @@ class VerdictBackend:
                 raise FileNotFoundError(f"Missing tokenizer file: {tokenizer_file}")
 
             try:
+                import numpy as np  # noqa: F401
                 import onnxruntime as ort
                 from tokenizers import Tokenizer
             except ImportError as e:
@@ -306,6 +307,7 @@ class VerdictBackend:
         max_len = max(len(e.ids) for e in encodings)
         total_tokens = sum(len(e.ids) for e in encodings)
         batch_size = len(prompts)
+        import numpy as np
 
         input_ids = np.zeros((batch_size, max_len), dtype=np.int64)
         attention_mask = np.zeros((batch_size, max_len), dtype=np.int64)
