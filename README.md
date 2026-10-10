@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/ericmaddox/system1-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/ericmaddox/system1-mcp/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/system1-mcp?logo=pypi&color=blue)](https://pypi.org/project/system1-mcp/)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 **A Jev-powered System 1 reflex engine for AI agents via Model Context Protocol (MCP).**
